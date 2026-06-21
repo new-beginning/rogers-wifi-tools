@@ -27,15 +27,21 @@ pip install requests beautifulsoup4
 ## CLI Usage
 
 ```
-python router.py <command> [options]
+python router.py -p <password> [-u <username>] [--host <ip>] <command> [options]
 ```
+
+| Flag | Default | Description |
+|---|---|---|
+| `-p`, `--password` | *(required)* | Router password |
+| `-u`, `--username` | `admin` | Router username |
+| `--host` | `10.0.0.1` | Router IP address |
 
 ### Commands
 
 #### `status` -- Router overview
 
 ```
-python router.py status
+python router.py -p mypassword status
 ```
 
 ```
@@ -48,7 +54,7 @@ firewall     Low     Firewall is set to Low
 #### `devices` -- List connected devices
 
 ```
-python router.py devices
+python router.py -p mypassword devices
 ```
 
 ```
@@ -63,9 +69,9 @@ L7030-CQRCND3                  10.0.0.187      64:D6:9A:C7:80:35    Wi-Fi 5 GHz
 Pings a hostname from the router to check internet connectivity.
 
 ```
-python router.py ping                       # defaults to www.rogers.com
-python router.py ping www.google.com
-python router.py ping www.google.com -c 2   # send 2 packets (1-4)
+python router.py -p mypassword ping                       # defaults to www.rogers.com
+python router.py -p mypassword ping www.google.com
+python router.py -p mypassword ping www.google.com -c 2   # send 2 packets (1-4)
 ```
 
 ```
@@ -78,20 +84,20 @@ Received:    4
 #### `ping4` -- Ping an IPv4 address
 
 ```
-python router.py ping4 8.8.8.8
-python router.py ping4 8.8.8.8 -c 1
+python router.py -p mypassword ping4 8.8.8.8
+python router.py -p mypassword ping4 8.8.8.8 -c 1
 ```
 
 #### `ping6` -- Ping an IPv6 address
 
 ```
-python router.py ping6 2001:4860:4860::8888
+python router.py -p mypassword ping6 2001:4860:4860::8888
 ```
 
 #### `trace4` -- Traceroute to an IPv4 address
 
 ```
-python router.py trace4 8.8.8.8
+python router.py -p mypassword trace4 8.8.8.8
 ```
 
 ```
@@ -105,7 +111,7 @@ Traceroute to 8.8.8.8 — Complete
 #### `trace6` -- Traceroute to an IPv6 address
 
 ```
-python router.py trace6 2001:4860:4860::8888
+python router.py -p mypassword trace6 2001:4860:4860::8888
 ```
 
 ## Library Usage

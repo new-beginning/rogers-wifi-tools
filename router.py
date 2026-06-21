@@ -207,6 +207,9 @@ if __name__ == "__main__":
     import sys
 
     parser = argparse.ArgumentParser(description="Rogers router diagnostic tools")
+    parser.add_argument("-u", "--username", default="admin", help="Router username (default: admin)")
+    parser.add_argument("-p", "--password", required=True, help="Router password")
+    parser.add_argument("--host", default="10.0.0.1", help="Router IP address (default: 10.0.0.1)")
     sub = parser.add_subparsers(dest="command")
 
     p_ping = sub.add_parser("ping", help="Test connectivity by hostname")
@@ -235,12 +238,7 @@ if __name__ == "__main__":
         parser.print_help()
         sys.exit(0)
 
-    import os
-    password = os.environ.get("ROUTER_PASSWORD", "")
-    if not password:
-        print("Set ROUTER_PASSWORD environment variable", file=sys.stderr)
-        sys.exit(1)
-    router = RogersRouter(password=password)
+    router = RogersRouter(host=args.host, username=args.username, password=args.password)
     if not router.login():
         print("Login failed!", file=sys.stderr)
         sys.exit(1)
