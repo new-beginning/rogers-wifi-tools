@@ -24,24 +24,44 @@ Install dependencies:
 pip install requests beautifulsoup4
 ```
 
+## Configuration
+
+Copy the example config and fill in your credentials:
+
+```
+cp config.ini.example config.ini
+```
+
+```ini
+[router]
+host = 10.0.0.1
+username = admin
+password = your_router_password
+
+[email]
+smtp_host = in-v3.mailjet.com
+smtp_port = 587
+api_key = your_mailjet_api_key
+secret_key = your_mailjet_secret_key
+from_address = you@example.com
+```
+
+`config.ini` is gitignored so your credentials stay local.
+
 ## CLI Usage
 
 ```
-python router.py -p <password> [-u <username>] [--host <ip>] <command> [options]
+python router.py <command> [options]
 ```
 
-| Flag | Default | Description |
-|---|---|---|
-| `-p`, `--password` | *(required)* | Router password |
-| `-u`, `--username` | `admin` | Router username |
-| `--host` | `10.0.0.1` | Router IP address |
+All credentials are read from `config.ini`.
 
 ### Commands
 
 #### `status` -- Router overview
 
 ```
-python router.py -p mypassword status
+python router.py status
 ```
 
 ```
@@ -54,7 +74,7 @@ firewall     Low     Firewall is set to Low
 #### `devices` -- List connected devices
 
 ```
-python router.py -p mypassword devices
+python router.py devices
 ```
 
 ```
@@ -69,9 +89,9 @@ L7030-CQRCND3                  10.0.0.187      64:D6:9A:C7:80:35    Wi-Fi 5 GHz
 Pings a hostname from the router to check internet connectivity.
 
 ```
-python router.py -p mypassword ping                       # defaults to www.rogers.com
-python router.py -p mypassword ping www.google.com
-python router.py -p mypassword ping www.google.com -c 2   # send 2 packets (1-4)
+python router.py ping                       # defaults to www.rogers.com
+python router.py ping www.google.com
+python router.py ping www.google.com -c 2   # send 2 packets (1-4)
 ```
 
 ```
@@ -84,20 +104,20 @@ Received:    4
 #### `ping4` -- Ping an IPv4 address
 
 ```
-python router.py -p mypassword ping4 8.8.8.8
-python router.py -p mypassword ping4 8.8.8.8 -c 1
+python router.py ping4 8.8.8.8
+python router.py ping4 8.8.8.8 -c 1
 ```
 
 #### `ping6` -- Ping an IPv6 address
 
 ```
-python router.py -p mypassword ping6 2001:4860:4860::8888
+python router.py ping6 2001:4860:4860::8888
 ```
 
 #### `trace4` -- Traceroute to an IPv4 address
 
 ```
-python router.py -p mypassword trace4 8.8.8.8
+python router.py trace4 8.8.8.8
 ```
 
 ```
@@ -111,39 +131,51 @@ Traceroute to 8.8.8.8 — Complete
 #### `trace6` -- Traceroute to an IPv6 address
 
 ```
-python router.py -p mypassword trace6 2001:4860:4860::8888
+python router.py trace6 2001:4860:4860::8888
+```
+
+#### `test-email` -- Send a test email
+
+Verifies that Mailjet SMTP is configured correctly.
+
+```
+python router.py test-email you@example.com
 ```
 
 ## Library Usage
 
 ```python
-from router import RogersRouter
+from router import RogersRouter, load_config, send_email
 
+config = load_config()  # reads config.ini
+
+# Router
 router = RogersRouter(
-    host="10.0.0.1",       # router IP
-    username="admin",       # default
-    password="your_password"
+    host="10.0.0.1",
+    username="admin",
+    password="your_password",
 )
-
 router.login()
 
-# Status & info
-router.get_status()            # internet/wifi/moca/firewall status
-router.get_connected_devices() # list of connected devices
-router.get_software_info()     # firmware version, model info
-router.get_wifi_settings()     # wireless configuration
-
-# Diagnostics
-router.test_connectivity("www.google.com", count=4)  # ping by hostname
-router.ping_ipv4("8.8.8.8", count=4)                 # ping IPv4
-router.ping_ipv6("2001:4860:4860::8888", count=4)    # ping IPv6
-router.traceroute_ipv4("8.8.8.8")                     # traceroute IPv4
-router.traceroute_ipv6("2001:4860:4860::8888")         # traceroute IPv6
-
-# Management
-router.reboot()  # reboot the gateway
-
+router.get_status()
+router.get_connected_devices()
+router.get_software_info()
+router.get_wifi_settings()
+router.test_connectivity("www.google.com", count=4)
+router.ping_ipv4("8.8.8.8", count=4)
+router.ping_ipv6("2001:4860:4860::8888", count=4)
+router.traceroute_ipv4("8.8.8.8")
+router.traceroute_ipv6("2001:4860:4860::8888")
+router.reboot()
 router.logout()
+
+# Email
+send_email(
+    subject="Alert",
+    body="Internet is down!",
+    to="you@example.com",
+    config=config,
+)
 ```
 
 ## Notes

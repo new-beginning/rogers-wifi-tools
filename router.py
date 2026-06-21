@@ -1,7 +1,33 @@
+import configparser
 import re
+import smtplib
+from email.mime.text import MIMEText
+from pathlib import Path
 
 import requests
 from bs4 import BeautifulSoup
+
+CONFIG_PATH = Path(__file__).parent / "config.ini"
+
+
+def load_config(path: Path = CONFIG_PATH) -> configparser.ConfigParser:
+    config = configparser.ConfigParser()
+    config.read(path)
+    return config
+
+
+def send_email(subject: str, body: str, to: str, config: configparser.ConfigParser | None = None):
+    if config is None:
+        config = load_config()
+    cfg = config["email"]
+    msg = MIMEText(body)
+    msg["Subject"] = subject
+    msg["From"] = cfg["from_address"]
+    msg["To"] = to
+    with smtplib.SMTP(cfg["smtp_host"], int(cfg["smtp_port"])) as server:
+        server.starttls()
+        server.login(cfg["api_key"], cfg["secret_key"])
+        server.send_message(msg)
 
 
 class RogersRouter:
@@ -207,9 +233,7 @@ if __name__ == "__main__":
     import sys
 
     parser = argparse.ArgumentParser(description="Rogers router diagnostic tools")
-    parser.add_argument("-u", "--username", default="admin", help="Router username (default: admin)")
-    parser.add_argument("-p", "--password", required=True, help="Router password")
-    parser.add_argument("--host", default="10.0.0.1", help="Router IP address (default: 10.0.0.1)")
+    parser.add_argument("--config", default=str(CONFIG_PATH), help="Path to config.ini")
     sub = parser.add_subparsers(dest="command")
 
     p_ping = sub.add_parser("ping", help="Test connectivity by hostname")
@@ -233,12 +257,32 @@ if __name__ == "__main__":
     sub.add_parser("status", help="Show router status overview")
     sub.add_parser("devices", help="List connected devices")
 
+    p_email = sub.add_parser("test-email", help="Send a test email")
+    p_email.add_argument("to", help="Recipient email address")
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
         sys.exit(0)
 
-    router = RogersRouter(host=args.host, username=args.username, password=args.password)
+    config = load_config(Path(args.config))
+
+    if args.command == "test-email":
+        send_email(
+            subject="Rogers Wi-Fi Tools - Test Email",
+            body="This is a test email from Rogers Wi-Fi Tools. Email is configured correctly.",
+            to=args.to,
+            config=config,
+        )
+        print(f"Test email sent to {args.to}")
+        sys.exit(0)
+
+    router_cfg = config["router"]
+    router = RogersRouter(
+        host=router_cfg["host"],
+        username=router_cfg["username"],
+        password=router_cfg["password"],
+    )
     if not router.login():
         print("Login failed!", file=sys.stderr)
         sys.exit(1)

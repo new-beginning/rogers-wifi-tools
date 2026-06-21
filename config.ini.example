@@ -1,0 +1,11 @@
+[router]
+host = 10.0.0.1
+username = admin
+password = your_router_password
+
+[email]
+smtp_host = in-v3.mailjet.com
+smtp_port = 587
+api_key = your_mailjet_api_key
+secret_key = your_mailjet_secret_key
+from_address = you@example.com
