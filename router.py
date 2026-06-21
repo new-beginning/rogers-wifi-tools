@@ -1,6 +1,8 @@
 import configparser
 import re
 import smtplib
+import time
+from datetime import datetime
 from email.mime.text import MIMEText
 from pathlib import Path
 
@@ -173,15 +175,18 @@ class RogersRouter:
         return resp.json()
 
     def test_connectivity(self, destination: str = "www.rogers.com", count: int = 4) -> dict:
+        t0 = time.time()
         result = self._diag_post({
             "test_connectivity": "true",
             "destination_address": destination,
             "count1": str(count),
         })
+        elapsed_ms = (time.time() - t0) * 1000
         return {
             "status": result.get("connectivity_internet", ""),
             "packets_sent": count,
             "packets_received": int(result.get("success_received", 0)),
+            "response_time_ms": round(elapsed_ms),
         }
 
     def ping_ipv4(self, address: str, count: int = 4) -> str:
@@ -220,6 +225,49 @@ class RogersRouter:
             "hops": result.get("trace_ipv6_result", []),
         }
 
+    def ping_monitor(
+        self,
+        destination: str = "8.8.8.8",
+        interval_min: float = 1,
+        threshold_ms: int = 2000,
+        on_alert=None,
+    ):
+        print(f"Monitoring {destination} every {interval_min}min, threshold {threshold_ms}ms")
+        print(f"Baseline response is ~1100ms (router overhead). Ctrl+C to stop.\n")
+        while True:
+            try:
+                result = self.test_connectivity(destination, count=1)
+                ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                ms = result["response_time_ms"]
+                recv = result["packets_received"]
+                status = result["status"]
+
+                if recv == 0:
+                    line = f"[{ts}]  {destination}  PACKET LOSS  ({ms}ms, status={status})"
+                    alert = True
+                elif ms > threshold_ms:
+                    line = f"[{ts}]  {destination}  HIGH LATENCY {ms}ms > {threshold_ms}ms  (status={status})"
+                    alert = True
+                else:
+                    line = f"[{ts}]  {destination}  OK  {ms}ms  (status={status})"
+                    alert = False
+
+                print(line)
+
+                if alert and on_alert:
+                    on_alert(destination, ms, recv, status, threshold_ms)
+
+            except Exception as e:
+                ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                print(f"[{ts}]  ERROR: {e} — re-logging in...")
+                try:
+                    self.login()
+                    print(f"[{ts}]  Reconnected.")
+                except Exception:
+                    print(f"[{ts}]  Reconnect failed, will retry next cycle.")
+
+            time.sleep(interval_min * 60)
+
     def reboot(self) -> bool:
         resp = self._ajax_post(
             "actionHandler/ajaxSet_restore_reboot.jst",
@@ -256,6 +304,12 @@ if __name__ == "__main__":
 
     sub.add_parser("status", help="Show router status overview")
     sub.add_parser("devices", help="List connected devices")
+
+    p_monitor = sub.add_parser("ping-monitor", help="Continuous ping monitor with email alerts")
+    p_monitor.add_argument("destination", nargs="?", default="8.8.8.8", help="Host to ping (default: 8.8.8.8)")
+    p_monitor.add_argument("-i", "--interval", type=float, default=1, help="Interval in minutes (default: 1)")
+    p_monitor.add_argument("-t", "--threshold", type=int, default=2000, help="Alert threshold in ms (default: 2000)")
+    p_monitor.add_argument("--to", default=None, help="Email recipient (default: from_address in config)")
 
     p_email = sub.add_parser("test-email", help="Send a test email")
     p_email.add_argument("to", help="Recipient email address")
@@ -328,5 +382,42 @@ if __name__ == "__main__":
             print("-" * 80)
             for d in devices:
                 print(f"{d.get('hostname', '?'):30s} {d.get('ipv4', ''):15s} {d.get('mac', ''):20s} {d.get('connection', '')}")
+
+        elif args.command == "ping-monitor":
+            alert_to = args.to or config["email"]["from_address"]
+
+            def on_alert(dest, ms, recv, status, threshold):
+                if recv == 0:
+                    subject = f"ALERT: Packet loss to {dest}"
+                    body = (
+                        f"Ping monitor detected packet loss from your Rogers router.\n\n"
+                        f"Destination: {dest}\n"
+                        f"Status: {status}\n"
+                        f"Response time: {ms}ms\n"
+                        f"Packets received: 0/1\n"
+                        f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                    )
+                else:
+                    subject = f"ALERT: High latency to {dest} ({ms}ms)"
+                    body = (
+                        f"Ping monitor detected high latency from your Rogers router.\n\n"
+                        f"Destination: {dest}\n"
+                        f"Response time: {ms}ms (threshold: {threshold}ms)\n"
+                        f"Status: {status}\n"
+                        f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                    )
+                try:
+                    send_email(subject, body, alert_to, config)
+                    print(f"  -> Alert email sent to {alert_to}")
+                except Exception as e:
+                    print(f"  -> Failed to send alert email: {e}")
+
+            print(f"Alerts will be emailed to {alert_to}")
+            router.ping_monitor(
+                destination=args.destination,
+                interval_min=args.interval,
+                threshold_ms=args.threshold,
+                on_alert=on_alert,
+            )
     finally:
         router.logout()
