@@ -38,15 +38,18 @@ host = 10.0.0.1
 username = admin
 password = your_router_password
 
-[email]
+[mailjet]
 smtp_host = in-v3.mailjet.com
 smtp_port = 587
 api_key = your_mailjet_api_key
 secret_key = your_mailjet_secret_key
+# Must be an authorized sender in Mailjet
 from_address = you@example.com
 ```
 
 `config.ini` is gitignored so your credentials stay local.
+
+**Mailjet setup:** The `from_address` must be added and verified as an authorized sender in your Mailjet account at https://app.mailjet.com/account/sender before emails can be sent.
 
 ## CLI Usage
 

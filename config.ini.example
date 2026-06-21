@@ -3,9 +3,11 @@ host = 10.0.0.1
 username = admin
 password = your_router_password
 
-[email]
+[mailjet]
 smtp_host = in-v3.mailjet.com
 smtp_port = 587
 api_key = your_mailjet_api_key
 secret_key = your_mailjet_secret_key
+# This address MUST be added as an authorized sender in your Mailjet account.
+# Go to https://app.mailjet.com/account/sender to add and verify it before use.
 from_address = you@example.com

@@ -21,7 +21,7 @@ def load_config(path: Path = CONFIG_PATH) -> configparser.ConfigParser:
 def send_email(subject: str, body: str, to: str, config: configparser.ConfigParser | None = None):
     if config is None:
         config = load_config()
-    cfg = config["email"]
+    cfg = config["mailjet"]
     msg = MIMEText(body)
     msg["Subject"] = subject
     msg["From"] = cfg["from_address"]
@@ -205,6 +205,13 @@ class RogersRouter:
         })
         return result.get("connectivity_ipv6", "")
 
+    @staticmethod
+    def _parse_hop_rtts(hop_line: str) -> list[float]:
+        match = re.match(r"\d+:\s*([\d,]+)", hop_line)
+        if not match:
+            return []
+        return [float(v) for v in match.group(1).split(",") if v.strip()]
+
     def traceroute_ipv4(self, address: str) -> dict:
         result = self._diag_post({
             "trace_ipv4": "true",
@@ -229,33 +236,46 @@ class RogersRouter:
         self,
         destination: str = "8.8.8.8",
         interval_min: float = 1,
-        threshold_ms: int = 2000,
+        threshold_ms: int = 100,
         on_alert=None,
     ):
         print(f"Monitoring {destination} every {interval_min}min, threshold {threshold_ms}ms")
-        print(f"Baseline response is ~1100ms (router overhead). Ctrl+C to stop.\n")
+        print(f"Using traceroute for real RTT measurements. Ctrl+C to stop.\n")
         while True:
             try:
-                result = self.test_connectivity(destination, count=1)
+                result = self.traceroute_ipv4(destination)
                 ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                ms = result["response_time_ms"]
-                recv = result["packets_received"]
                 status = result["status"]
+                hops = result["hops"]
 
-                if recv == 0:
-                    line = f"[{ts}]  {destination}  PACKET LOSS  ({ms}ms, status={status})"
-                    alert = True
-                elif ms > threshold_ms:
-                    line = f"[{ts}]  {destination}  HIGH LATENCY {ms}ms > {threshold_ms}ms  (status={status})"
-                    alert = True
+                if status != "Complete" or not hops:
+                    line = f"[{ts}]  {destination}  FAILED  (status={status})"
+                    alert_data = {"type": "failed", "status": status}
                 else:
-                    line = f"[{ts}]  {destination}  OK  {ms}ms  (status={status})"
-                    alert = False
+                    last_hop = hops[-1]
+                    rtts = self._parse_hop_rtts(last_hop)
+                    if rtts:
+                        avg_ms = round(sum(rtts) / len(rtts), 1)
+                        max_ms = round(max(rtts), 1)
+                        rtt_str = ",".join(str(int(r)) for r in rtts)
+                    else:
+                        avg_ms = max_ms = 0
+                        rtt_str = "*"
+
+                    if max_ms == 0:
+                        line = f"[{ts}]  {destination}  TIMEOUT on last hop  ({last_hop.strip()})"
+                        alert_data = {"type": "timeout", "hop": last_hop.strip()}
+                    elif avg_ms > threshold_ms:
+                        line = f"[{ts}]  {destination}  HIGH LATENCY avg={avg_ms}ms max={max_ms}ms [{rtt_str}ms] > {threshold_ms}ms"
+                        alert_data = {"type": "latency", "avg_ms": avg_ms, "max_ms": max_ms, "rtts": rtt_str}
+                    else:
+                        line = f"[{ts}]  {destination}  OK  avg={avg_ms}ms max={max_ms}ms [{rtt_str}ms]"
+                        alert_data = None
 
                 print(line)
 
-                if alert and on_alert:
-                    on_alert(destination, ms, recv, status, threshold_ms)
+                if alert_data and on_alert:
+                    on_alert(destination, alert_data, threshold_ms)
 
             except Exception as e:
                 ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -308,7 +328,7 @@ if __name__ == "__main__":
     p_monitor = sub.add_parser("ping-monitor", help="Continuous ping monitor with email alerts")
     p_monitor.add_argument("destination", nargs="?", default="8.8.8.8", help="Host to ping (default: 8.8.8.8)")
     p_monitor.add_argument("-i", "--interval", type=float, default=1, help="Interval in minutes (default: 1)")
-    p_monitor.add_argument("-t", "--threshold", type=int, default=2000, help="Alert threshold in ms (default: 2000)")
+    p_monitor.add_argument("-t", "--threshold", type=int, default=100, help="Alert threshold in ms (default: 100)")
     p_monitor.add_argument("--to", default=None, help="Email recipient (default: from_address in config)")
 
     p_email = sub.add_parser("test-email", help="Send a test email")
@@ -384,27 +404,35 @@ if __name__ == "__main__":
                 print(f"{d.get('hostname', '?'):30s} {d.get('ipv4', ''):15s} {d.get('mac', ''):20s} {d.get('connection', '')}")
 
         elif args.command == "ping-monitor":
-            alert_to = args.to or config["email"]["from_address"]
+            alert_to = args.to or config["mailjet"]["from_address"]
 
-            def on_alert(dest, ms, recv, status, threshold):
-                if recv == 0:
-                    subject = f"ALERT: Packet loss to {dest}"
+            def on_alert(dest, data, threshold):
+                ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                if data["type"] == "failed":
+                    subject = f"ALERT: Traceroute to {dest} failed"
                     body = (
-                        f"Ping monitor detected packet loss from your Rogers router.\n\n"
+                        f"Ping monitor traceroute failed from your Rogers router.\n\n"
                         f"Destination: {dest}\n"
-                        f"Status: {status}\n"
-                        f"Response time: {ms}ms\n"
-                        f"Packets received: 0/1\n"
-                        f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                        f"Status: {data['status']}\n"
+                        f"Time: {ts}"
+                    )
+                elif data["type"] == "timeout":
+                    subject = f"ALERT: Timeout reaching {dest}"
+                    body = (
+                        f"Ping monitor detected timeout on last hop from your Rogers router.\n\n"
+                        f"Destination: {dest}\n"
+                        f"Last hop: {data['hop']}\n"
+                        f"Time: {ts}"
                     )
                 else:
-                    subject = f"ALERT: High latency to {dest} ({ms}ms)"
+                    subject = f"ALERT: High latency to {dest} (avg {data['avg_ms']}ms)"
                     body = (
                         f"Ping monitor detected high latency from your Rogers router.\n\n"
                         f"Destination: {dest}\n"
-                        f"Response time: {ms}ms (threshold: {threshold}ms)\n"
-                        f"Status: {status}\n"
-                        f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                        f"Average RTT: {data['avg_ms']}ms (threshold: {threshold}ms)\n"
+                        f"Max RTT: {data['max_ms']}ms\n"
+                        f"Probe RTTs: [{data['rtts']}]ms\n"
+                        f"Time: {ts}"
                     )
                 try:
                     send_email(subject, body, alert_to, config)
