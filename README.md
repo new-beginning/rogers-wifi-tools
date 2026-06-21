@@ -137,6 +137,34 @@ Traceroute to 8.8.8.8 — Complete
 python router.py trace6 2001:4860:4860::8888
 ```
 
+#### `ping-monitor` -- Continuous latency monitor with email alerts
+
+Runs traceroute to a host in a loop, measures the real round-trip time, and sends an email alert if latency exceeds the threshold or the host is unreachable.
+
+```
+python router.py ping-monitor                             # monitor 8.8.8.8, every 1min, threshold 100ms
+python router.py ping-monitor 1.1.1.1                     # monitor a different host
+python router.py ping-monitor 8.8.8.8 -i 5 -t 50         # every 5min, alert above 50ms
+python router.py ping-monitor 8.8.8.8 --to you@example.com  # send alerts to a specific address
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `destination` | `8.8.8.8` | Host to monitor |
+| `-i`, `--interval` | `1` | Minutes between checks |
+| `-t`, `--threshold` | `100` | Alert threshold in ms |
+| `--to` | `from_address` in config | Email recipient for alerts |
+
+```
+Monitoring 8.8.8.8 every 1min, threshold 100ms
+Using traceroute for real RTT measurements. Ctrl+C to stop.
+
+[2026-06-21 16:52:26]  8.8.8.8  OK  avg=8.7ms max=13.0ms [13,8,5ms]
+[2026-06-21 16:53:26]  8.8.8.8  OK  avg=11.0ms max=14.0ms [14,13,6ms]
+[2026-06-21 16:54:26]  8.8.8.8  HIGH LATENCY avg=120.3ms max=150.0ms [150,120,91ms] > 100ms
+  -> Alert email sent to you@example.com
+```
+
 #### `test-email` -- Send a test email
 
 Verifies that Mailjet SMTP is configured correctly.
