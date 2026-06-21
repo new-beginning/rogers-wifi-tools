@@ -18,14 +18,20 @@ def load_config(path: Path = CONFIG_PATH) -> configparser.ConfigParser:
     return config
 
 
-def send_email(subject: str, body: str, to: str, config: configparser.ConfigParser | None = None):
+def send_email(subject: str, body: str, to: str | list[str] | None = None, config: configparser.ConfigParser | None = None):
     if config is None:
         config = load_config()
     cfg = config["mailjet"]
+    if to is None:
+        to = cfg.get("to_address", cfg["from_address"])
+    if isinstance(to, str):
+        recipients = [addr.strip() for addr in to.split(",")]
+    else:
+        recipients = to
     msg = MIMEText(body)
     msg["Subject"] = subject
     msg["From"] = cfg["from_address"]
-    msg["To"] = to
+    msg["To"] = ", ".join(recipients)
     with smtplib.SMTP(cfg["smtp_host"], int(cfg["smtp_port"])) as server:
         server.starttls()
         server.login(cfg["api_key"], cfg["secret_key"])
@@ -404,7 +410,7 @@ if __name__ == "__main__":
                 print(f"{d.get('hostname', '?'):30s} {d.get('ipv4', ''):15s} {d.get('mac', ''):20s} {d.get('connection', '')}")
 
         elif args.command == "ping-monitor":
-            alert_to = args.to or config["mailjet"]["from_address"]
+            alert_to = args.to or config["mailjet"].get("to_address", config["mailjet"]["from_address"])
 
             def on_alert(dest, data, threshold):
                 ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
