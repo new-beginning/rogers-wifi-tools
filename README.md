@@ -139,29 +139,31 @@ python router.py trace6 2001:4860:4860::8888
 
 #### `ping-monitor` -- Continuous latency monitor with email alerts
 
-Runs traceroute to a host in a loop, measures the real round-trip time, and sends an email alert if latency exceeds the threshold or the host is unreachable. Falls back to ping when traceroute fails (e.g. `MaxHopCountExceeded`). Alerts are only sent on state changes to avoid inbox flooding.
+Runs traceroute to a host in a loop and monitors the first hop (ISP gateway) RTT by default. Sends an email alert if latency exceeds the threshold or the host is unreachable. Alerts are only sent on state changes to avoid inbox flooding. Backs off automatically if the router's diagnostic tools are throttled.
 
 ```
-python router.py ping-monitor                             # monitor 8.8.8.8, every 1min, threshold 100ms
-python router.py ping-monitor 1.1.1.1                     # monitor a different host
-python router.py ping-monitor 8.8.8.8 -i 5 -t 50         # every 5min, alert above 50ms
-python router.py ping-monitor 8.8.8.8 --to you@example.com  # send alerts to a specific address
+python router.py ping-monitor                             # monitor first hop via 8.8.8.8, every 5min
+python router.py ping-monitor 1.1.1.1                     # traceroute to a different host
+python router.py ping-monitor -i 10 -t 50                 # every 10min, alert above 50ms
+python router.py ping-monitor --hop last                  # monitor last hop (end-to-end) RTT
+python router.py ping-monitor --to you@example.com        # send alerts to a specific address
 ```
 
 | Flag | Default | Description |
 |---|---|---|
-| `destination` | `8.8.8.8` | Host to monitor |
-| `-i`, `--interval` | `1` | Minutes between checks |
+| `destination` | `8.8.8.8` | Traceroute destination |
+| `-i`, `--interval` | `5` | Minutes between checks |
 | `-t`, `--threshold` | `100` | Alert threshold in ms |
-| `--to` | `from_address` in config | Email recipient for alerts |
+| `--hop` | `first` | Which hop RTT to monitor (`first` or `last`) |
+| `--to` | `to_address` in config | Email recipient for alerts |
 
 ```
-Monitoring 8.8.8.8 every 1min, threshold 100ms
-Using traceroute for real RTT measurements. Ctrl+C to stop.
+Monitoring first hop to 8.8.8.8 every 5min, threshold 100ms
+Using traceroute RTT measurements. Ctrl+C to stop.
 
-[2026-06-21 16:52:26]  8.8.8.8  OK  avg=8.7ms max=13.0ms [13,8,5ms]
-[2026-06-21 16:53:26]  8.8.8.8  OK  avg=11.0ms max=14.0ms [14,13,6ms]
-[2026-06-21 16:54:26]  8.8.8.8  HIGH LATENCY avg=120.3ms max=150.0ms [150,120,91ms] > 100ms
+[2026-06-22 19:05:00]  99.234.28.1  OK  avg=10.0ms max=10.0ms [10,10ms]
+[2026-06-22 19:10:00]  99.234.28.1  OK  avg=11.0ms max=13.0ms [13,10,10ms]
+[2026-06-22 19:15:00]  99.234.28.1  HIGH LATENCY avg=120.3ms max=150.0ms [150,120,91ms] > 100ms
   -> Alert email sent to you@example.com
 ```
 

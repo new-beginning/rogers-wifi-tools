@@ -238,16 +238,30 @@ class RogersRouter:
             "hops": result.get("trace_ipv6_result", []),
         }
 
+    def get_wan_gateway(self) -> str | None:
+        soup = self._get_page("network_setup.jst")
+        for row in soup.select("div.form-row"):
+            label = row.find("span", class_="readonlyLabel")
+            value = row.find("span", class_="value")
+            if label and value and "WAN Default Gateway Address (IPv4)" in label.get_text():
+                ip = value.get_text(strip=True)
+                if re.match(r"\d+\.\d+\.\d+\.\d+$", ip):
+                    return ip
+        return None
+
     def ping_monitor(
         self,
         destination: str = "8.8.8.8",
-        interval_min: float = 1,
+        interval_min: float = 5,
         threshold_ms: int = 100,
+        hop: str = "first",
         on_alert=None,
     ):
-        print(f"Monitoring {destination} every {interval_min}min, threshold {threshold_ms}ms")
-        print(f"Using traceroute for real RTT measurements (ping fallback). Ctrl+C to stop.\n")
+        print(f"Monitoring {hop} hop to {destination} every {interval_min}min, threshold {threshold_ms}ms")
+        print(f"Using traceroute RTT measurements. Ctrl+C to stop.\n")
         last_alert_type = None
+        throttle_count = 0
+        THROTTLE_ERRORS = ("Error_MaxHopCountExceeded", "Error_Internal", "Error")
         while True:
             try:
                 result = self.traceroute_ipv4(destination)
@@ -256,16 +270,19 @@ class RogersRouter:
                 hops = result["hops"]
 
                 if status != "Complete" or not hops:
-                    ping_ok = self.ping_ipv4(destination, count=1) in ("OK", "Active")
-                    if ping_ok:
-                        line = f"[{ts}]  {destination}  OK (traceroute={status}, ping=OK)"
-                        alert_data = None
-                    else:
-                        line = f"[{ts}]  {destination}  FAILED  (traceroute={status}, ping=FAIL)"
-                        alert_data = {"type": "failed", "status": status}
+                    if status in THROTTLE_ERRORS:
+                        throttle_count += 1
+                        backoff = min(throttle_count * 2, 15)
+                        line = f"[{ts}]  {destination}  THROTTLED  (status={status}, backoff={backoff}min)"
+                        print(line)
+                        time.sleep(backoff * 60)
+                        continue
+                    line = f"[{ts}]  {destination}  FAILED  (status={status})"
+                    alert_data = {"type": "failed", "status": status}
                 else:
-                    last_hop = hops[-1]
-                    rtts = self._parse_hop_rtts(last_hop)
+                    throttle_count = 0
+                    target_hop = hops[0] if hop == "first" else hops[-1]
+                    rtts = self._parse_hop_rtts(target_hop)
                     if rtts:
                         avg_ms = round(sum(rtts) / len(rtts), 1)
                         max_ms = round(max(rtts), 1)
@@ -274,14 +291,15 @@ class RogersRouter:
                         avg_ms = max_ms = 0
                         rtt_str = "*"
 
+                    hop_label = target_hop.strip().split()[-1] if target_hop.strip() else destination
                     if max_ms == 0:
-                        line = f"[{ts}]  {destination}  TIMEOUT on last hop  ({last_hop.strip()})"
-                        alert_data = {"type": "timeout", "hop": last_hop.strip()}
+                        line = f"[{ts}]  {hop_label}  TIMEOUT  ({target_hop.strip()})"
+                        alert_data = {"type": "timeout", "hop": target_hop.strip()}
                     elif avg_ms > threshold_ms:
-                        line = f"[{ts}]  {destination}  HIGH LATENCY avg={avg_ms}ms max={max_ms}ms [{rtt_str}ms] > {threshold_ms}ms"
+                        line = f"[{ts}]  {hop_label}  HIGH LATENCY avg={avg_ms}ms max={max_ms}ms [{rtt_str}ms] > {threshold_ms}ms"
                         alert_data = {"type": "latency", "avg_ms": avg_ms, "max_ms": max_ms, "rtts": rtt_str}
                     else:
-                        line = f"[{ts}]  {destination}  OK  avg={avg_ms}ms max={max_ms}ms [{rtt_str}ms]"
+                        line = f"[{ts}]  {hop_label}  OK  avg={avg_ms}ms max={max_ms}ms [{rtt_str}ms]"
                         alert_data = None
 
                 print(line)
@@ -304,8 +322,8 @@ class RogersRouter:
 
     def reboot(self) -> bool:
         resp = self._ajax_post(
-            "actionHandler/ajaxSet_restore_reboot.jst",
-            data={"deviceRestart": "true"},
+            "actionHandler/ajaxSet_Reset_Restore.jst",
+            data={"resetInfo": '["btn1","Device","admin"]'},
         )
         return resp.status_code == 200
 
@@ -340,9 +358,10 @@ if __name__ == "__main__":
     sub.add_parser("devices", help="List connected devices")
 
     p_monitor = sub.add_parser("ping-monitor", help="Continuous ping monitor with email alerts")
-    p_monitor.add_argument("destination", nargs="?", default="8.8.8.8", help="Host to ping (default: 8.8.8.8)")
-    p_monitor.add_argument("-i", "--interval", type=float, default=1, help="Interval in minutes (default: 1)")
+    p_monitor.add_argument("destination", nargs="?", default="8.8.8.8", help="Traceroute destination (default: 8.8.8.8)")
+    p_monitor.add_argument("-i", "--interval", type=float, default=5, help="Interval in minutes (default: 5)")
     p_monitor.add_argument("-t", "--threshold", type=int, default=100, help="Alert threshold in ms (default: 100)")
+    p_monitor.add_argument("--hop", choices=["first", "last"], default="first", help="Which hop RTT to monitor (default: first)")
     p_monitor.add_argument("--to", default=None, help="Email recipient (default: from_address in config)")
 
     p_email = sub.add_parser("test-email", help="Send a test email")
@@ -459,6 +478,7 @@ if __name__ == "__main__":
                 destination=args.destination,
                 interval_min=args.interval,
                 threshold_ms=args.threshold,
+                hop=args.hop,
                 on_alert=on_alert,
             )
     finally:
