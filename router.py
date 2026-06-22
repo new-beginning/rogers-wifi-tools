@@ -246,7 +246,8 @@ class RogersRouter:
         on_alert=None,
     ):
         print(f"Monitoring {destination} every {interval_min}min, threshold {threshold_ms}ms")
-        print(f"Using traceroute for real RTT measurements. Ctrl+C to stop.\n")
+        print(f"Using traceroute for real RTT measurements (ping fallback). Ctrl+C to stop.\n")
+        last_alert_type = None
         while True:
             try:
                 result = self.traceroute_ipv4(destination)
@@ -255,8 +256,13 @@ class RogersRouter:
                 hops = result["hops"]
 
                 if status != "Complete" or not hops:
-                    line = f"[{ts}]  {destination}  FAILED  (status={status})"
-                    alert_data = {"type": "failed", "status": status}
+                    ping_ok = self.ping_ipv4(destination, count=1) in ("OK", "Active")
+                    if ping_ok:
+                        line = f"[{ts}]  {destination}  OK (traceroute={status}, ping=OK)"
+                        alert_data = None
+                    else:
+                        line = f"[{ts}]  {destination}  FAILED  (traceroute={status}, ping=FAIL)"
+                        alert_data = {"type": "failed", "status": status}
                 else:
                     last_hop = hops[-1]
                     rtts = self._parse_hop_rtts(last_hop)
@@ -280,8 +286,10 @@ class RogersRouter:
 
                 print(line)
 
-                if alert_data and on_alert:
+                current_type = alert_data["type"] if alert_data else None
+                if alert_data and on_alert and current_type != last_alert_type:
                     on_alert(destination, alert_data, threshold_ms)
+                last_alert_type = current_type
 
             except Exception as e:
                 ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

@@ -139,7 +139,7 @@ python router.py trace6 2001:4860:4860::8888
 
 #### `ping-monitor` -- Continuous latency monitor with email alerts
 
-Runs traceroute to a host in a loop, measures the real round-trip time, and sends an email alert if latency exceeds the threshold or the host is unreachable.
+Runs traceroute to a host in a loop, measures the real round-trip time, and sends an email alert if latency exceeds the threshold or the host is unreachable. Falls back to ping when traceroute fails (e.g. `MaxHopCountExceeded`). Alerts are only sent on state changes to avoid inbox flooding.
 
 ```
 python router.py ping-monitor                             # monitor 8.8.8.8, every 1min, threshold 100ms
