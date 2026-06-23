@@ -256,12 +256,21 @@ class RogersRouter:
         threshold_ms: int = 100,
         hop: str = "first",
         on_alert=None,
+        log_file: str = "ping_monitor.log",
     ):
         print(f"Monitoring {hop} hop to {destination} every {interval_min}min, threshold {threshold_ms}ms")
-        print(f"Using traceroute RTT measurements. Ctrl+C to stop.\n")
+        print(f"Using traceroute RTT measurements. Ctrl+C to stop.")
+        print(f"Logging to {log_file}\n")
+        log_path = Path(log_file)
         last_alert_type = None
         throttle_count = 0
         THROTTLE_ERRORS = ("Error_MaxHopCountExceeded", "Error_Internal", "Error")
+
+        def _log(line: str):
+            print(line)
+            with open(log_path, "a") as f:
+                f.write(line + "\n")
+
         while True:
             try:
                 result = self.traceroute_ipv4(destination)
@@ -273,8 +282,7 @@ class RogersRouter:
                     if status in THROTTLE_ERRORS:
                         throttle_count += 1
                         backoff = min(throttle_count * 2, 15)
-                        line = f"[{ts}]  {destination}  THROTTLED  (status={status}, backoff={backoff}min)"
-                        print(line)
+                        _log(f"[{ts}]  {destination}  THROTTLED  (status={status}, backoff={backoff}min)")
                         time.sleep(backoff * 60)
                         continue
                     line = f"[{ts}]  {destination}  FAILED  (status={status})"
@@ -302,7 +310,7 @@ class RogersRouter:
                         line = f"[{ts}]  {hop_label}  OK  avg={avg_ms}ms max={max_ms}ms [{rtt_str}ms]"
                         alert_data = None
 
-                print(line)
+                _log(line)
 
                 current_type = alert_data["type"] if alert_data else None
                 if alert_data and on_alert and current_type != last_alert_type:
@@ -311,12 +319,12 @@ class RogersRouter:
 
             except Exception as e:
                 ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                print(f"[{ts}]  ERROR: {e} — re-logging in...")
+                _log(f"[{ts}]  ERROR: {e} — re-logging in...")
                 try:
                     self.login()
-                    print(f"[{ts}]  Reconnected.")
+                    _log(f"[{ts}]  Reconnected.")
                 except Exception:
-                    print(f"[{ts}]  Reconnect failed, will retry next cycle.")
+                    _log(f"[{ts}]  Reconnect failed, will retry next cycle.")
 
             time.sleep(interval_min * 60)
 
@@ -363,6 +371,7 @@ if __name__ == "__main__":
     p_monitor.add_argument("-t", "--threshold", type=int, default=100, help="Alert threshold in ms (default: 100)")
     p_monitor.add_argument("--hop", choices=["first", "last"], default="first", help="Which hop RTT to monitor (default: first)")
     p_monitor.add_argument("--to", default=None, help="Email recipient (default: from_address in config)")
+    p_monitor.add_argument("--log", default="ping_monitor.log", help="Log file path (default: ping_monitor.log)")
 
     p_email = sub.add_parser("test-email", help="Send a test email")
     p_email.add_argument("to", help="Recipient email address")
@@ -480,6 +489,7 @@ if __name__ == "__main__":
                 threshold_ms=args.threshold,
                 hop=args.hop,
                 on_alert=on_alert,
+                log_file=args.log,
             )
     finally:
         router.logout()
