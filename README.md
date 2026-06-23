@@ -147,6 +147,7 @@ python router.py ping-monitor 1.1.1.1                     # traceroute to a diff
 python router.py ping-monitor -i 10 -t 50                 # every 10min, alert above 50ms
 python router.py ping-monitor --hop last                  # monitor last hop (end-to-end) RTT
 python router.py ping-monitor --to you@example.com        # send alerts to a specific address
+python router.py ping-monitor --log /var/log/ping.log     # log to a custom file
 ```
 
 | Flag | Default | Description |
@@ -156,10 +157,12 @@ python router.py ping-monitor --to you@example.com        # send alerts to a spe
 | `-t`, `--threshold` | `100` | Alert threshold in ms |
 | `--hop` | `first` | Which hop RTT to monitor (`first` or `last`) |
 | `--to` | `to_address` in config | Email recipient for alerts |
+| `--log` | `ping_monitor.log` | Log file path (appended to) |
 
 ```
 Monitoring first hop to 8.8.8.8 every 5min, threshold 100ms
 Using traceroute RTT measurements. Ctrl+C to stop.
+Logging to ping_monitor.log
 
 [2026-06-22 19:05:00]  99.234.28.1  OK  avg=10.0ms max=10.0ms [10,10ms]
 [2026-06-22 19:10:00]  99.234.28.1  OK  avg=11.0ms max=13.0ms [13,10,10ms]
