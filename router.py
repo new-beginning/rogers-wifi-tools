@@ -364,6 +364,8 @@ if __name__ == "__main__":
 
     sub.add_parser("status", help="Show router status overview")
     sub.add_parser("devices", help="List connected devices")
+    sub.add_parser("wifi", help="Show Wi-Fi settings")
+    sub.add_parser("software", help="Show software/firmware info")
 
     p_monitor = sub.add_parser("ping-monitor", help="Continuous ping monitor with email alerts")
     p_monitor.add_argument("destination", nargs="?", default="8.8.8.8", help="Traceroute destination (default: 8.8.8.8)")
@@ -372,6 +374,8 @@ if __name__ == "__main__":
     p_monitor.add_argument("--hop", choices=["first", "last"], default="first", help="Which hop RTT to monitor (default: first)")
     p_monitor.add_argument("--to", default=None, help="Email recipient (default: from_address in config)")
     p_monitor.add_argument("--log", default="ping_monitor.log", help="Log file path (default: ping_monitor.log)")
+
+    sub.add_parser("reboot", help="Reboot the router")
 
     p_email = sub.add_parser("test-email", help="Send a test email")
     p_email.add_argument("to", help="Recipient email address")
@@ -444,6 +448,23 @@ if __name__ == "__main__":
             print("-" * 80)
             for d in devices:
                 print(f"{d.get('hostname', '?'):30s} {d.get('ipv4', ''):15s} {d.get('mac', ''):20s} {d.get('connection', '')}")
+
+        elif args.command == "wifi":
+            settings = router.get_wifi_settings()
+            for k, v in settings.items():
+                print(f"  {k:30s} {v}")
+
+        elif args.command == "software":
+            info = router.get_software_info()
+            for k, v in info.items():
+                print(f"  {k:30s} {v}")
+
+        elif args.command == "reboot":
+            if router.reboot():
+                print("Router reboot initiated.")
+            else:
+                print("Reboot request failed.", file=sys.stderr)
+                sys.exit(1)
 
         elif args.command == "ping-monitor":
             alert_to = args.to or config["mailjet"].get("to_address", config["mailjet"]["from_address"])

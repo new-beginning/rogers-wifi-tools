@@ -137,6 +137,30 @@ Traceroute to 8.8.8.8 — Complete
 python router.py trace6 2001:4860:4860::8888
 ```
 
+#### `wifi` -- Show Wi-Fi settings
+
+```
+python router.py wifi
+```
+
+Displays all Wi-Fi configuration fields (SSID, band, channel, security mode, etc.) as read from the router's wireless settings page.
+
+#### `software` -- Show software/firmware info
+
+```
+python router.py software
+```
+
+Displays firmware version, software version, and other software details reported by the router.
+
+#### `reboot` -- Reboot the router
+
+```
+python router.py reboot
+```
+
+Sends a reboot command to the router. The router will go offline for a couple of minutes while it restarts.
+
 #### `ping-monitor` -- Continuous latency monitor with email alerts
 
 Runs traceroute to a host in a loop and monitors the first hop (ISP gateway) RTT by default. Sends an email alert if latency exceeds the threshold or the host is unreachable. Alerts are only sent on state changes to avoid inbox flooding. Backs off automatically if the router's diagnostic tools are throttled.
